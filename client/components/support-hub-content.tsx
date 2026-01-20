@@ -208,8 +208,8 @@ export function SupportHubContent() {
                 </p>
                 <p className="font-semibold text-foreground">
                   Email us at{' '}
-                  <a href="mailto:support@kuddles.com" className="text-[var(--brand-coral)] hover:underline">
-                    support@kuddles.com
+                  <a href="mailto:kuddleseg@gmail.com" className="text-[var(--brand-coral)] hover:underline">
+                    kuddleseg@gmail.com
                   </a>
                 </p>
               </div>

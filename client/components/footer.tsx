@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { Facebook, Instagram, Twitter } from "lucide-react"
+import { Instagram, MessageCircle } from "lucide-react"
 
 export function Footer() {
   const currentYear = new Date().getFullYear()
@@ -24,15 +24,6 @@ export function Footer() {
             {/* Social Media Links */}
             <div className="flex items-center gap-4 mt-8">
               <a
-                href="https://facebook.com/kuddles"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-10 h-10 bg-slate-800 hover:bg-[var(--brand-coral)] rounded-lg flex items-center justify-center transition-colors duration-200"
-                aria-label="Facebook"
-              >
-                <Facebook className="h-5 w-5" />
-              </a>
-              <a
                 href="https://www.instagram.com/kuddles.eg?igsh=dDE3MXU1MHhwN2po&utm_source=qr"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -42,13 +33,13 @@ export function Footer() {
                 <Instagram className="h-5 w-5" />
               </a>
               <a
-                href="https://twitter.com/kuddles"
+                href="https://wa.me/message/TJLBRF36UGRJC1"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-10 h-10 bg-slate-800 hover:bg-[var(--brand-coral)] rounded-lg flex items-center justify-center transition-colors duration-200"
-                aria-label="Twitter"
+                aria-label="WhatsApp"
               >
-                <Twitter className="h-5 w-5" />
+                <MessageCircle className="h-5 w-5" />
               </a>
             </div>
           </div>
