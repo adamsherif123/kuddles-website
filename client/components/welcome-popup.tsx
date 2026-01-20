@@ -114,9 +114,6 @@ export function WelcomePopup() {
               </div>
               <div className="space-y-1">
                 <h3 className="font-bold text-foreground">All set!</h3>
-                <p className="text-sm text-foreground/70">
-                  Check your email for your exclusive discount code.
-                </p>
               </div>
             </div>
           ) : (
