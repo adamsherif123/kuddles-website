@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { doc, getDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
@@ -14,7 +14,7 @@ import Image from "next/image"
 
 type OrderStatus = "created" | "paid" | "failed" | "cash_on_delivery" | "cod" | string
 
-export default function CheckoutSuccessPage() {
+function CheckoutSuccessContent() {
   const params = useSearchParams()
   const orderId = params.get("orderId")
 
@@ -74,35 +74,25 @@ export default function CheckoutSuccessPage() {
   // Only show success page if order was successfully created
   if (loading) {
     return (
-      <>
-        <Navbar />
-        <main className="min-h-screen bg-gradient-to-br from-[var(--brand-blue-light)]/30 via-background to-background flex items-center justify-center px-4">
-          <div className="text-center">
-            <p className="text-foreground/70">Loading order status…</p>
-          </div>
-        </main>
-        <Footer />
-        <CartDrawer />
-      </>
+      <main className="min-h-screen bg-gradient-to-br from-[var(--brand-blue-light)]/30 via-background to-background flex items-center justify-center px-4">
+        <div className="text-center">
+          <p className="text-foreground/70">Loading order status…</p>
+        </div>
+      </main>
     )
   }
 
   if (status === "failed" || !orderId) {
     return (
-      <>
-        <Navbar />
-        <main className="min-h-screen bg-gradient-to-br from-[var(--brand-blue-light)]/30 via-background to-background flex items-center justify-center px-4">
-          <div className="max-w-2xl w-full text-center space-y-6">
-            <h1 className="text-4xl font-bold text-foreground">Order Not Found</h1>
-            <p className="text-foreground/70">We couldn't find your order. Please contact support if you believe this is an error.</p>
-            <Button asChild size="lg" className="bg-[var(--brand-coral)] hover:bg-[var(--brand-coral)]/90 text-white">
-              <Link href="/shop">Continue Shopping</Link>
-            </Button>
-          </div>
-        </main>
-        <Footer />
-        <CartDrawer />
-      </>
+      <main className="min-h-screen bg-gradient-to-br from-[var(--brand-blue-light)]/30 via-background to-background flex items-center justify-center px-4">
+        <div className="max-w-2xl w-full text-center space-y-6">
+          <h1 className="text-4xl font-bold text-foreground">Order Not Found</h1>
+          <p className="text-foreground/70">We couldn't find your order. Please contact support if you believe this is an error.</p>
+          <Button asChild size="lg" className="bg-[var(--brand-coral)] hover:bg-[var(--brand-coral)]/90 text-white">
+            <Link href="/shop">Continue Shopping</Link>
+          </Button>
+        </div>
+      </main>
     )
   }
 
@@ -112,9 +102,7 @@ export default function CheckoutSuccessPage() {
     : new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 
   return (
-    <>
-      <Navbar />
-      <main className="min-h-screen bg-gradient-to-br from-[var(--brand-blue-light)]/30 via-background to-background flex items-center justify-center px-4 py-8 md:py-12">
+    <main className="min-h-screen bg-gradient-to-br from-[var(--brand-blue-light)]/30 via-background to-background flex items-center justify-center px-4 py-8 md:py-12">
         {/* Decorative sticker - top right */}
         <div className="absolute top-20 right-10 w-40 h-40 opacity-10 hidden lg:block">
           <Image
@@ -222,6 +210,22 @@ export default function CheckoutSuccessPage() {
           </div>
         </div>
       </main>
+  )
+}
+
+export default function CheckoutSuccessPage() {
+  return (
+    <>
+      <Navbar />
+      <Suspense fallback={
+        <main className="min-h-screen bg-gradient-to-br from-[var(--brand-blue-light)]/30 via-background to-background flex items-center justify-center px-4">
+          <div className="text-center">
+            <p className="text-foreground/70">Loading order status…</p>
+          </div>
+        </main>
+      }>
+        <CheckoutSuccessContent />
+      </Suspense>
       <Footer />
       <CartDrawer />
     </>

@@ -1,13 +1,13 @@
 "use client"
 
-import { useEffect } from "react"
+import { Suspense, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { doc, serverTimestamp, updateDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { Navbar } from "@/components/navbar"
 import { Card } from "@/components/ui/card"
 
-export default function SuccessReturnPage() {
+function SuccessReturnContent() {
   const router = useRouter()
   const params = useSearchParams()
 
@@ -42,18 +42,37 @@ export default function SuccessReturnPage() {
   }, [orderId, success, router])
 
   return (
+    <main className="min-h-screen py-10">
+      <div className="container mx-auto px-4 max-w-2xl">
+        <Card className="p-8">
+          <h1 className="text-2xl font-bold mb-2">Processing payment…</h1>
+          <p className="text-muted-foreground">
+            We're confirming your payment and finalizing your order.
+          </p>
+        </Card>
+      </div>
+    </main>
+  )
+}
+
+export default function SuccessReturnPage() {
+  return (
     <>
       <Navbar />
-      <main className="min-h-screen py-10">
-        <div className="container mx-auto px-4 max-w-2xl">
-          <Card className="p-8">
-            <h1 className="text-2xl font-bold mb-2">Processing payment…</h1>
-            <p className="text-muted-foreground">
-              We’re confirming your payment and finalizing your order.
-            </p>
-          </Card>
-        </div>
-      </main>
+      <Suspense fallback={
+        <main className="min-h-screen py-10">
+          <div className="container mx-auto px-4 max-w-2xl">
+            <Card className="p-8">
+              <h1 className="text-2xl font-bold mb-2">Loading…</h1>
+              <p className="text-muted-foreground">
+                Processing your request…
+              </p>
+            </Card>
+          </div>
+        </main>
+      }>
+        <SuccessReturnContent />
+      </Suspense>
     </>
   )
 }

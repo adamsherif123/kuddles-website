@@ -1,55 +1,54 @@
-// "use client"
+"use client"
 
-// import { useEffect } from "react"
-// import { useRouter, useSearchParams } from "next/navigation"
-// import { doc, serverTimestamp, updateDoc } from "firebase/firestore"
-// import { db } from "@/lib/firebase"
-// import { Navbar } from "@/components/navbar"
-// import { Card } from "@/components/ui/card"
+import { Suspense, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Navbar } from "@/components/navbar"
+import { Footer } from "@/components/footer"
+import { CartDrawer } from "@/components/cart-drawer"
 
-// export default function PaymobReturnPage() {
-//   const router = useRouter()
-//   const params = useSearchParams()
+function PaymobReturnContent() {
+  const router = useRouter()
+  const params = useSearchParams()
 
-//   // With our Paymob flow, we control redirection_url and include:
-//   // /checkout?orderId=<FIRESTORE_ORDER_ID>
-//   const success = params.get("success")
-//   const orderId = params.get("orderId")
+  useEffect(() => {
+    // Paymob usually returns query params like success, txn_response_code, etc.
+    // You can customize this logic later. For now, we just route safely.
+    const success = params.get("success")
+    const orderId = params.get("orderId") || params.get("merchant_order_id") || params.get("order_id")
 
-//   useEffect(() => {
-//     ;(async () => {
-//       if (!orderId) {
-//         router.replace("/shop")
-//         return
-//       }
+    if (success === "true" && orderId) {
+      router.replace(`/checkout/success?orderId=${encodeURIComponent(orderId)}`)
+      return
+    }
 
-//       try {
-//         await updateDoc(doc(db, "orders", orderId), {
-//           status: success === "true" ? "paid" : "failed",
-//           paymentStatus: success === "true" ? "paid" : "failed",
-//           updatedAt: serverTimestamp(),
-//         })
-//       } catch {
-//         // even if update fails, still send user onward
-//       }
+    if (orderId) {
+      router.replace(`/checkout/failed?orderId=${encodeURIComponent(orderId)}`)
+      return
+    }
 
-//       router.replace(`/checkout/success?orderId=${encodeURIComponent(orderId)}`)
-//     })()
-//   }, [orderId, success, router])
+    router.replace("/checkout/failed")
+  }, [params, router])
 
-//   return (
-//     <>
-//       <Navbar />
-//       <main className="min-h-screen py-10">
-//         <div className="container mx-auto px-4 max-w-2xl">
-//           <Card className="p-8">
-//             <h1 className="text-2xl font-bold mb-2">Processing payment…</h1>
-//             <p className="text-muted-foreground">
-//               We’re confirming your payment and finalizing your order.
-//             </p>
-//           </Card>
-//         </div>
-//       </main>
-//     </>
-//   )
-// }
+  return (
+    <main className="min-h-screen flex items-center justify-center px-4">
+      <p className="text-foreground/70">Finalizing your payment…</p>
+    </main>
+  )
+}
+
+export default function PaymobReturnPage() {
+  return (
+    <>
+      <Navbar />
+      <Suspense fallback={
+        <main className="min-h-screen flex items-center justify-center px-4">
+          <p className="text-foreground/70">Loading…</p>
+        </main>
+      }>
+        <PaymobReturnContent />
+      </Suspense>
+      <Footer />
+      <CartDrawer />
+    </>
+  )
+}
