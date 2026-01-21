@@ -128,10 +128,10 @@ export default function DashboardScreen() {
   }, [orders])
 
   const cardWidth = useMemo(() => {
-    // Calculate optimal width for KPI cards
+    // Calculate optimal width for KPI cards (4 cards instead of 6)
     const availableWidth = screenWidth - PAGE_PADDING * 2
-    const w = Math.min(160, Math.floor((availableWidth - GAP * 5) / 6))
-    return Math.max(130, w)
+    const w = Math.min(200, Math.floor((availableWidth - GAP * 3) / 4))
+    return Math.max(160, w)
   }, [])
 
   const chartWidth = useMemo(() => {
@@ -159,8 +159,6 @@ export default function DashboardScreen() {
         <KpiCard label="Total Orders" value={String(analytics.totalOrders)} width={cardWidth} />
         <KpiCard label="Gross Revenue" value={money(analytics.grossRevenue)} width={cardWidth} />
         <KpiCard label="Avg Order" value={money(analytics.avgOrderValue)} width={cardWidth} />
-        <KpiCard label="Pending" value={String(analytics.pendingOrders)} width={cardWidth} />
-        <KpiCard label="This Week (Orders)" value={String(analytics.last7.reduce((s, d) => s + d.orders, 0))} width={cardWidth} />
         <KpiCard label="This Week (Rev)" value={money(analytics.last7.reduce((s, d) => s + d.revenue, 0))} width={cardWidth} />
       </ScrollView>
 

@@ -7,16 +7,25 @@ import {
   Pressable,
   ActivityIndicator,
   ScrollView,
+  Alert,
 } from "react-native"
 
 import SheetModal from "../components/SheetModal"
 import type { Order } from "../../order"
-import { fetchOrderShippingAddress, listenOrders, updateOrderStatus, type ShippingAddress } from "../services/orders"
+import {
+  fetchOrderShippingAddress,
+  listenOrders,
+  updateOrderStatus,
+  deleteOrderAndRestock,
+  type ShippingAddress,
+} from "../services/orders"
+
+const STATUS_OPTIONS = ["pending", "paid", "fulfilled", "cancelled", "failed"]
 
 function formatMoney(v: number, currency = "EGP") {
-  const n = Number(v || 0)
+  const n = Number.isFinite(Number(v)) ? Number(v) : 0
   try {
-    return new Intl.NumberFormat("en-EG", { style: "currency", currency }).format(n)
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(n)
   } catch {
     return `${currency} ${n.toFixed(2)}`
   }
@@ -30,16 +39,16 @@ function formatDate(ts: any) {
 function statusPillStyle(status: string) {
   const s = String(status || "pending").toLowerCase()
   if (s === "paid") return { bg: "#DCFCE7", fg: "#166534", border: "#86EFAC" }
-  if (s === "fulfilled" || s === "delivered" || s === "completed") return { bg: "#DBEAFE", fg: "#1D4ED8", border: "#93C5FD" }
+  if (s === "fulfilled" || s === "delivered" || s === "completed")
+    return { bg: "#DBEAFE", fg: "#1D4ED8", border: "#93C5FD" }
   if (s === "cancelled") return { bg: "#FEE2E2", fg: "#991B1B", border: "#FCA5A5" }
   if (s === "failed") return { bg: "#FFE4E6", fg: "#9F1239", border: "#FDA4AF" }
   return { bg: "#FEF3C7", fg: "#92400E", border: "#FCD34D" } // pending/default
 }
 
-const STATUS_OPTIONS = ["pending", "paid", "fulfilled", "cancelled", "failed"]
-
 export default function OrdersScreen() {
   const [orders, setOrders] = useState<Order[]>([])
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const [selected, setSelected] = useState<Order | null>(null)
@@ -47,22 +56,28 @@ export default function OrdersScreen() {
   const [addrLoading, setAddrLoading] = useState(false)
 
   const [savingStatus, setSavingStatus] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     const unsub = listenOrders(
       (data) => {
         setOrders(data)
         setError(null)
+        setLoading(false)
       },
-      (e) => setError(e?.message ?? "Failed to load orders")
+      (e) => {
+        setError(e?.message ?? "Failed to load orders")
+        setLoading(false)
+      }
     )
     return () => unsub()
   }, [])
 
   const totals = useMemo(() => {
-    const revenue = orders.reduce((sum, o) => sum + Number(o.total ?? o.subtotal ?? 0), 0)
+    const count = orders.length
     const pending = orders.filter((o) => String(o.status ?? "pending").toLowerCase() === "pending").length
-    return { revenue, count: orders.length, pending }
+    const paid = orders.filter((o) => String(o.status ?? "").toLowerCase() === "paid").length
+    return { count, pending, paid }
   }, [orders])
 
   async function openOrder(o: Order) {
@@ -70,11 +85,10 @@ export default function OrdersScreen() {
     setAddress(null)
     setAddrLoading(true)
     try {
-      const a = await fetchOrderShippingAddress(o.id)
-      setAddress(a)
-    } catch (e: any) {
-      // keep null; we show a nice empty state
-      console.warn(e)
+      const addr = await fetchOrderShippingAddress(o.id)
+      setAddress(addr)
+    } catch {
+      setAddress(null)
     } finally {
       setAddrLoading(false)
     }
@@ -83,8 +97,6 @@ export default function OrdersScreen() {
   function closeOrder() {
     setSelected(null)
     setAddress(null)
-    setAddrLoading(false)
-    setSavingStatus(false)
   }
 
   async function setStatus(nextStatus: string) {
@@ -92,8 +104,6 @@ export default function OrdersScreen() {
     setSavingStatus(true)
     try {
       await updateOrderStatus(selected.id, nextStatus)
-
-      // Optimistically update local state so UI snaps instantly
       setOrders((prev) => prev.map((o) => (o.id === selected.id ? { ...o, status: nextStatus } : o)))
       setSelected((prev) => (prev ? { ...prev, status: nextStatus } : prev))
     } catch (e: any) {
@@ -103,9 +113,44 @@ export default function OrdersScreen() {
     }
   }
 
+  async function onDeleteOrder() {
+    if (!selected) return
+  
+    // ✅ Web-safe confirmation (works on Expo Web / RN Web)
+    const ok =
+      typeof window !== "undefined"
+        ? window.confirm(
+            "Delete order?\n\nThis will delete the order from Firestore and restock all items back into inventory."
+          )
+        : true
+  
+    if (!ok) return
+  
+    setDeleting(true)
+    setError(null)
+  
+    try {
+      console.log("[ADMIN] deleteOrderAndRestock start:", selected.id)
+      await deleteOrderAndRestock(selected.id)
+      console.log("[ADMIN] deleteOrderAndRestock success:", selected.id)
+  
+      setOrders((prev) => prev.filter((o) => o.id !== selected.id))
+      closeOrder()
+  
+      // Optional: quick feedback
+      if (typeof window !== "undefined") window.alert("Order deleted & stock restored ✅")
+    } catch (e: any) {
+      console.error("[ADMIN] deleteOrderAndRestock failed:", e)
+      setError(e?.message ?? String(e) ?? "Failed to delete order")
+      if (typeof window !== "undefined") window.alert(e?.message ?? "Failed to delete order")
+    } finally {
+      setDeleting(false)
+    }
+  }
+  
+
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.headerRow}>
         <View>
           <Text style={styles.title}>Orders</Text>
@@ -113,7 +158,6 @@ export default function OrdersScreen() {
         </View>
       </View>
 
-      {/* KPI row (like your screenshot top cards) */}
       <View style={styles.kpiRow}>
         <View style={styles.kpiCard}>
           <Text style={styles.kpiLabel}>Total Orders</Text>
@@ -124,66 +168,58 @@ export default function OrdersScreen() {
           <Text style={styles.kpiValue}>{totals.pending}</Text>
         </View>
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiLabel}>Gross Revenue</Text>
-          <Text style={styles.kpiValue}>{formatMoney(totals.revenue, "EGP")}</Text>
+          <Text style={styles.kpiLabel}>Paid</Text>
+          <Text style={styles.kpiValue}>{totals.paid}</Text>
         </View>
       </View>
 
-      {error ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error}</Text>
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator />
+          <Text style={styles.muted}>Loading…</Text>
         </View>
-      ) : null}
-
-      {/* Orders list */}
-      <View style={styles.card}>
-        <View style={styles.cardHeaderRow}>
-          <Text style={styles.cardTitle}>Recent orders</Text>
+      ) : error ? (
+        <View style={styles.center}>
+          <Text style={{ color: "#B91C1C", fontWeight: "800" }}>{error}</Text>
         </View>
-
+      ) : orders.length === 0 ? (
+        <View style={styles.center}>
+          <Text style={styles.muted}>No orders yet.</Text>
+        </View>
+      ) : (
         <FlatList
           data={orders}
           keyExtractor={(o) => o.id}
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: 12 }}
-          showsVerticalScrollIndicator={true}
+          contentContainerStyle={{ paddingBottom: 24 }}
           renderItem={({ item }) => {
-            const currency = item.currency ?? "EGP"
-            const total = Number(item.total ?? item.subtotal ?? 0)
-            const status = String(item.status ?? "pending")
-            const pill = statusPillStyle(status)
-            const itemsCount = item.items?.reduce((s, it) => s + Number(it.quantity ?? 0), 0) ?? 0
-
+            const pill = statusPillStyle(item.status ?? "pending")
             return (
-              <Pressable onPress={() => openOrder(item)} style={({ pressed }) => [styles.row, pressed && { opacity: 0.92 }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.orderId}>#{item.id.slice(0, 8).toUpperCase()}</Text>
-                  <Text style={styles.muted}>{formatDate(item.createdAt)}</Text>
-                  <Text style={styles.muted}>{itemsCount} item(s)</Text>
-                </View>
+              <Pressable onPress={() => openOrder(item)} style={styles.card}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.orderId}>Order #{item.id.slice(0, 8).toUpperCase()}</Text>
+                    <Text style={styles.mutedSmall}>{formatDate(item.createdAt)}</Text>
+                  </View>
 
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={styles.orderTotal}>{formatMoney(total, currency)}</Text>
-                  <View style={[styles.pill, { backgroundColor: pill.bg, borderColor: pill.border }]}>
-                    <Text style={[styles.pillText, { color: pill.fg }]}>{status.toUpperCase()}</Text>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={styles.orderTotal}>
+                      {formatMoney(Number(item.total ?? item.subtotal ?? 0), item.currency ?? "EGP")}
+                    </Text>
+
+                    <View style={[styles.pill, { backgroundColor: pill.bg, borderColor: pill.border }]}>
+                      <Text style={[styles.pillText, { color: pill.fg }]}>{String(item.status ?? "pending")}</Text>
+                    </View>
                   </View>
                 </View>
               </Pressable>
             )
           }}
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <Text style={styles.muted}>No orders yet.</Text>
-            </View>
-          }
         />
-      </View>
+      )}
 
-      {/* Expanded order view */}
       <SheetModal visible={!!selected} onClose={closeOrder}>
         {!selected ? null : (
-          <ScrollView style={{ maxHeight: 680 }} contentContainerStyle={{ paddingBottom: 12 }}>
-            {/* Top */}
+          <ScrollView style={{ maxHeight: 680 }} contentContainerStyle={{ paddingBottom: 16 }}>
             <View style={styles.sheetHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.sheetTitle}>Order #{selected.id.slice(0, 8).toUpperCase()}</Text>
@@ -211,16 +247,19 @@ export default function OrdersScreen() {
                     <Pressable
                       key={s}
                       onPress={() => setStatus(s)}
-                      disabled={savingStatus}
+                      disabled={savingStatus || deleting}
                       style={({ pressed }) => [
                         styles.statusChip,
-                        { borderColor: active ? "#FF6B6B" : pill.border, backgroundColor: active ? "rgba(255,107,107,0.12)" : "#fff" },
+                        {
+                          borderColor: active ? "#FF6B6B" : pill.border,
+                          backgroundColor: active ? "rgba(255,107,107,0.12)" : "#fff",
+                        },
                         pressed && { opacity: 0.9 },
-                        savingStatus && { opacity: 0.6 },
+                        (savingStatus || deleting) && { opacity: 0.6 },
                       ]}
                     >
                       <Text style={{ fontWeight: "800", color: active ? "#FF6B6B" : "#111827", fontSize: 12 }}>
-                        {s.toUpperCase()}
+                        {s}
                       </Text>
                     </Pressable>
                   )
@@ -246,20 +285,24 @@ export default function OrdersScreen() {
                 </View>
               ) : !address ? (
                 <View style={styles.emptyBox}>
-                  <Text style={styles.muted}>
-                    No address found in orders/{selected.id}/shipping/address
-                  </Text>
+                  <Text style={styles.muted}>No address found in orders/{selected.id}/shipping/address</Text>
                 </View>
               ) : (
                 <View style={styles.infoBox}>
-                  <Text style={styles.infoLine}><Text style={styles.infoKey}>Name: </Text>{address.fullName ?? "—"}</Text>
-                  <Text style={styles.infoLine}><Text style={styles.infoKey}>Phone: </Text>{address.phone ?? "—"}</Text>
-                  <Text style={styles.infoLine}><Text style={styles.infoKey}>Email: </Text>{address.email ?? "—"}</Text>
-
-                  <View style={styles.divider} />
-
                   <Text style={styles.infoLine}>
-                    <Text style={styles.infoKey}>Address: </Text>
+                    <Text style={styles.infoKey}>Name: </Text>
+                    {address.fullName ?? "—"}
+                  </Text>
+                  <Text style={styles.infoLine}>
+                    <Text style={styles.infoKey}>Phone: </Text>
+                    {address.phone ?? "—"}
+                  </Text>
+                  <Text style={styles.infoLine}>
+                    <Text style={styles.infoKey}>Email: </Text>
+                    {address.email ?? "—"}
+                  </Text>
+                  <Text style={styles.infoLine}>
+                    <Text style={styles.infoKey}>Street: </Text>
                     {address.streetAddress ?? "—"}
                   </Text>
                   <Text style={styles.infoLine}>
@@ -274,7 +317,10 @@ export default function OrdersScreen() {
                   {address.notes ? (
                     <>
                       <View style={styles.divider} />
-                      <Text style={styles.infoLine}><Text style={styles.infoKey}>Notes: </Text>{address.notes}</Text>
+                      <Text style={styles.infoLine}>
+                        <Text style={styles.infoKey}>Notes: </Text>
+                        {address.notes}
+                      </Text>
                     </>
                   ) : null}
                 </View>
@@ -294,17 +340,39 @@ export default function OrdersScreen() {
                       <View style={{ flex: 1 }}>
                         <Text style={styles.itemName}>{it.name}</Text>
                         <Text style={styles.mutedSmall}>
-                          {it.color ? `Color: ${it.color}` : ""}{it.color && it.size ? " • " : ""}{it.size ? `Size: ${it.size}` : ""}
+                          {it.color ? `Color: ${it.color}` : ""}
+                          {it.color && it.size ? " • " : ""}
+                          {it.size ? `Size: ${it.size}` : ""}
                         </Text>
                       </View>
                       <View style={{ alignItems: "flex-end" }}>
                         <Text style={styles.itemQty}>x{Number(it.quantity ?? 0)}</Text>
-                        <Text style={styles.mutedSmall}>{formatMoney(Number(it.price ?? 0), selected.currency ?? "EGP")}</Text>
+                        <Text style={styles.mutedSmall}>
+                          {formatMoney(Number(it.price ?? 0), selected.currency ?? "EGP")}
+                        </Text>
                       </View>
                     </View>
                   ))
                 )}
               </View>
+
+              {/* DELETE BUTTON */}
+              <Pressable
+                onPress={onDeleteOrder}
+                disabled={savingStatus || deleting}
+                style={({ pressed }) => [
+                  styles.deleteBtn,
+                  pressed && { opacity: 0.9 },
+                  (savingStatus || deleting) && { opacity: 0.6 },
+                ]}
+              >
+                {deleting ? <ActivityIndicator /> : null}
+                <Text style={styles.deleteBtnText}>Delete order & restock</Text>
+              </Pressable>
+
+              <Text style={[styles.mutedSmall, { marginTop: 8 }]}>
+                This will remove the order from Firestore and return all quantities back to product stockBySize.
+              </Text>
             </View>
           </ScrollView>
         )}
@@ -314,51 +382,78 @@ export default function OrdersScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, backgroundColor: "#F6F7FB" },
+  container: { flex: 1, backgroundColor: "#fff", paddingHorizontal: 16, paddingTop: 16 },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 14 },
+  title: { fontSize: 26, fontWeight: "900", color: "#111827" },
+  subtitle: { marginTop: 4, color: "#6B7280", fontWeight: "600" },
 
-  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
-  title: { fontSize: 26, fontWeight: "900" },
-  subtitle: { color: "#6B7280", marginTop: 4 },
-
-  // KPI row like screenshot: small cards on ONE line (web) — RN will wrap on narrow screens.
-  kpiRow: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 14 },
+  kpiRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
   kpiCard: {
-    flexGrow: 1,
-    flexBasis: 220,
-    backgroundColor: "#FFFFFF",
+    flex: 1,
+    padding: 12,
     borderRadius: 14,
-    padding: 14,
     borderWidth: 1,
-    borderColor: "#E9E9EE",
+    borderColor: "#F0F0F4",
+    backgroundColor: "#FAFAFB",
   },
-  kpiLabel: { color: "#6B7280", fontSize: 12, marginBottom: 6 },
-  kpiValue: { fontSize: 18, fontWeight: "900" },
+  kpiLabel: { color: "#6B7280", fontWeight: "800", fontSize: 12 },
+  kpiValue: { fontSize: 20, fontWeight: "900", marginTop: 6, color: "#111827" },
 
-  errorBox: { backgroundColor: "#FEE2E2", borderColor: "#FCA5A5", borderWidth: 1, padding: 12, borderRadius: 12, marginBottom: 12 },
-  errorText: { color: "#991B1B", fontWeight: "700" },
+  center: { paddingVertical: 30, alignItems: "center", gap: 10 },
 
   card: {
-    flex: 1,                // ✅ THIS is the key
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    padding: 14,
     borderWidth: 1,
-    borderColor: "#E9E9EE",
-    minHeight: 0,           // ✅ important for scrolling inside flex containers
+    borderColor: "#F0F0F4",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+    backgroundColor: "#fff",
   },
-  cardHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  cardTitle: { fontSize: 14, fontWeight: "900" },
 
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#F0F0F4",
+  sheetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16 },
+  sheetTitle: { fontSize: 18, fontWeight: "900", color: "#111827" },
+  sheetTotal: { fontSize: 18, fontWeight: "900", color: "#111827" },
+
+  section: { paddingHorizontal: 16, paddingBottom: 14 },
+  sectionTitle: { fontSize: 14, fontWeight: "900", color: "#111827" },
+
+  statusRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+  statusChip: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: "#fff",
   },
-  orderId: { fontWeight: "900", marginBottom: 4 },
-  orderTotal: { fontWeight: "900", fontSize: 16, marginBottom: 8 },
+
+  infoBox: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#F0F0F4",
+    backgroundColor: "#FAFAFB",
+  },
+  emptyBox: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#F0F0F4",
+    backgroundColor: "#fff",
+  },
+
+  infoLine: { color: "#111827", fontWeight: "600", marginBottom: 6 },
+  infoKey: { fontWeight: "900" },
+  divider: { height: 1, backgroundColor: "#E5E7EB", marginVertical: 10 },
+
+  itemRow: { flexDirection: "row", justifyContent: "space-between", gap: 12, paddingVertical: 10 },
+  itemName: { fontWeight: "900", color: "#111827" },
+  itemQty: { fontWeight: "900", color: "#111827" },
+
+  orderId: { fontWeight: "900", marginBottom: 4, color: "#111827" },
+  orderTotal: { fontWeight: "900", fontSize: 16, marginBottom: 8, color: "#111827" },
 
   pill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, borderWidth: 1 },
   pillText: { fontWeight: "900", fontSize: 11 },
@@ -366,33 +461,15 @@ const styles = StyleSheet.create({
   muted: { color: "#6B7280" },
   mutedSmall: { color: "#6B7280", fontSize: 12, marginTop: 4 },
 
-  empty: { paddingVertical: 30, alignItems: "center" },
-  emptyBox: { marginTop: 10, backgroundColor: "#F9FAFB", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 12, padding: 12 },
-
-  // Sheet
-  sheetHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 10 },
-  sheetTitle: { fontSize: 18, fontWeight: "900" },
-  sheetTotal: { fontSize: 16, fontWeight: "900" },
-
-  section: { marginTop: 14 },
-  sectionTitle: { fontSize: 13, fontWeight: "900" },
-
-  statusRow: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 10 },
-  statusChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    backgroundColor: "#fff",
+  deleteBtn: {
+    marginTop: 14,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: "#EF4444",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 10,
   },
-
-  infoBox: { marginTop: 10, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E9E9EE", borderRadius: 12, padding: 12 },
-  divider: { height: 1, backgroundColor: "#F0F0F4", marginVertical: 10 },
-
-  infoKey: { fontWeight: "900", color: "#111827" },
-  infoLine: { color: "#111827", marginBottom: 6 },
-
-  itemRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, borderTopWidth: 1, borderTopColor: "#F0F0F4" },
-  itemName: { fontWeight: "900" },
-  itemQty: { fontWeight: "900" },
+  deleteBtnText: { color: "white", fontWeight: "900" },
 })

@@ -1,10 +1,15 @@
 import type { Timestamp } from "firebase/firestore"
 
 export type OrderItem = {
+  // NOTE: in your app this might be a "variant id" like:
+  // "<productId>-<color>-<size>"
+  // We handle that in services/orders.ts when restocking.
   id: string
+
   name: string
   price: number
   quantity: number
+
   color?: string
   size?: string
   image?: string
@@ -12,7 +17,11 @@ export type OrderItem = {
 
 export type Order = {
   id: string
+
   createdAt?: Timestamp | any
+  updatedAt?: Timestamp | any
+
+  // status values you use in the UI
   status?: "pending" | "paid" | "failed" | "fulfilled" | "cancelled" | string
 
   // totals
