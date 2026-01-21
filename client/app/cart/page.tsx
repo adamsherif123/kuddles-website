@@ -55,8 +55,8 @@ export default function CartPage() {
   const [placingOrder, setPlacingOrder] = useState(false)
   const [placeError, setPlaceError] = useState<string | null>(null)
 
-  // ✅ Payment method (Paymob card vs COD)
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("paymob")
+  // ✅ Payment method (Paymob card vs COD) - Default to COD
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cod")
 
   const errors = useMemo(() => validateAddress(address), [address])
   const isValid = Object.keys(errors).length === 0
