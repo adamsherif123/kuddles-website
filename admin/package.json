@@ -17,13 +17,16 @@
     "react-native-web": "~0.21.0"
   },
   "scripts": {
-    "start": "expo start",
+    "build": "expo export --platform web",
     "web": "expo start --web",
     "ios": "expo start --ios",
     "android": "expo start --android"
+    
   },
   "devDependencies": {
     "@types/react": "~19.1.10",
     "typescript": "~5.9.2"
   }
+
+  
 }
